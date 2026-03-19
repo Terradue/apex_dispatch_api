@@ -9,8 +9,11 @@ from app.schemas.unit_job import ServiceDetails
 class ParamTypeEnum(str, Enum):
     DATE_INTERVAL = "date-interval"
     BOUNDING_BOX = "bounding-box"
+    POLYGON = "polygon"
     BOOLEAN = "boolean"
+    INTEGER = "integer"
     STRING = "string"
+    ARRAY_STRING = "array-string"
 
 
 class ParamRequest(BaseModel):
@@ -44,4 +47,9 @@ class Parameter(BaseModel):
         None,
         description="Default value of the parameter, if any",
         examples=["default_value"],
+    )
+    options: list[Any] | None = Field(
+        None,
+        description="List of valid options for the parameter, if applicable",
+        examples=[["option1", "option2"]]
     )
