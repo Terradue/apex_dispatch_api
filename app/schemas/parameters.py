@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from app.schemas.enum import ProcessTypeEnum
 from app.schemas.unit_job import ServiceDetails
 
+from typing import List
 
 class ParamTypeEnum(str, Enum):
     DATETIME = "datetime"
@@ -26,7 +27,6 @@ class ParamRequest(BaseModel):
     service: ServiceDetails = Field(
         ..., description="Details of the service for which to retrieve the parameters"
     )
-
 
 class Parameter(BaseModel):
     name: str = Field(..., description="Name of the parameter", examples=["param1"])
@@ -55,3 +55,8 @@ class Parameter(BaseModel):
         description="List of valid options for the parameter, if applicable",
         examples=[["option1", "option2"]]
     )
+
+
+class InOutParameters(BaseModel):
+    inputs: List[Parameter]
+    outputs: List[Parameter]

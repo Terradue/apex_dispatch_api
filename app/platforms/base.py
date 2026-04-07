@@ -4,10 +4,10 @@ from typing import List
 from fastapi import Response
 
 from app.schemas.enum import OutputFormatEnum, ProcessingStatusEnum
-from app.schemas.parameters import Parameter
+from app.schemas.parameters import InOutParameters
 from app.schemas.unit_job import ServiceDetails
 
-from stac_pydantic import Collection
+from typing import Any, Mapping
 
 
 class BaseProcessingPlatform(ABC):
@@ -75,7 +75,7 @@ class BaseProcessingPlatform(ABC):
     @abstractmethod
     async def get_job_results(
         self, user_token: str, job_id: str, details: ServiceDetails
-    ) -> Collection:
+    ) -> Mapping[str, Any]:
         """
         Retrieve the job results of a processing job that is running on the platform.
 
@@ -89,7 +89,7 @@ class BaseProcessingPlatform(ABC):
     @abstractmethod
     async def get_service_parameters(
         self, user_token: str, details: ServiceDetails
-    ) -> List[Parameter]:
+    ) -> InOutParameters:
         """
         Retrieve the parameters required for a specific processing service.
 

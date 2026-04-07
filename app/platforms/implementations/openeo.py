@@ -17,10 +17,12 @@ from app.error import AuthException
 from app.platforms.base import BaseProcessingPlatform
 from app.platforms.dispatcher import register_platform
 from app.schemas.enum import OutputFormatEnum, ProcessingStatusEnum, ProcessTypeEnum
-from app.schemas.parameters import ParamTypeEnum, Parameter
+from app.schemas.parameters import InOutParameters, ParamTypeEnum, Parameter
 from app.schemas.unit_job import ServiceDetails
 
 from openeo.rest import OpenEoApiError
+
+from typing import Any, Mapping
 
 load_dotenv()
 
@@ -184,10 +186,10 @@ class OpenEOPlatform(BaseProcessingPlatform):
 
     async def _get_job_results_once(
         self, user_token: str, job_id: str, details: ServiceDetails
-    ) -> Collection:
+    ) -> Mapping[str, Any]:
         connection = await self._setup_connection(user_token, details.endpoint)
         job = connection.job(job_id)
-        return Collection(**job.get_results().get_metadata())
+        return Collection(**job.get_results().get_metadata()).model_dump()
 
     def _get_client_credentials(self, url: str) -> tuple[str, str, str]:
         """
@@ -380,7 +382,7 @@ class OpenEOPlatform(BaseProcessingPlatform):
 
     async def get_job_results(
         self, user_token: str, job_id: str, details: ServiceDetails
-    ) -> Collection:
+    ) -> Mapping[str, Any]:
         try:
             logger.debug(f"Fetching job result for openEO job with ID {job_id}")
             return await self._get_job_results_once(user_token, job_id, details)
@@ -403,8 +405,8 @@ class OpenEOPlatform(BaseProcessingPlatform):
 
     async def get_service_parameters(
         self, user_token: str, details: ServiceDetails
-    ) -> List[Parameter]:
-        parameters = []
+    ) -> InOutParameters:
+        input_parameters: List[Parameter] = []
         logger.debug(
             f"Fetching service parameters for OpenEO service at {details.application}"
         )
@@ -416,7 +418,7 @@ class OpenEOPlatform(BaseProcessingPlatform):
             schemas = param.get("schema", {})
             if not isinstance(schemas, list):
                 schemas = [schemas]
-            parameters.append(
+            input_parameters.append(
                 Parameter(
                     name=param.get("name"),
                     description=param.get("description"),
@@ -427,7 +429,10 @@ class OpenEOPlatform(BaseProcessingPlatform):
                 )
             )
 
-        return parameters
+        return InOutParameters(
+            inputs=input_parameters,
+            outputs=[]
+        )
 
     def _get_options_from_schemas(self, schemas: List[dict]) -> list:
         for schema in schemas:

@@ -7,7 +7,7 @@ from loguru import logger
 from app.platforms.base import BaseProcessingPlatform
 from app.platforms.dispatcher import register_platform
 from app.schemas.enum import OutputFormatEnum, ProcessTypeEnum, ProcessingStatusEnum
-from app.schemas.parameters import ParamTypeEnum, Parameter
+from app.schemas.parameters import InOutParameters, ParamTypeEnum, Parameter
 from app.schemas.unit_job import ServiceDetails
 from stac_pydantic.collection import Collection, Extent, SpatialExtent, TimeInterval
 from stac_pydantic.links import Links
@@ -21,8 +21,7 @@ from ogc_api_processes_client.models.link import Link as OgcLink
 from ogc_api_processes_client.models.qualified_input_value import QualifiedInputValue
 from ogc_api_processes_client.models.status_code import StatusCode
 from ogc_api_processes_client.models.status_info import StatusInfo
-from typing import Dict
-
+from typing import Any, Dict, Mapping
 
 @register_platform(ProcessTypeEnum.OGC_API_PROCESS)
 class OGCAPIProcessPlatform(BaseProcessingPlatform):
@@ -165,7 +164,7 @@ class OGCAPIProcessPlatform(BaseProcessingPlatform):
 
     async def get_job_results(
         self, user_token: str, job_id: str, details: ServiceDetails
-    ) -> Collection:
+    ) -> Mapping[str, Any]:
         logger.debug(f"Fetching job result for opfenEO job with ID {job_id}")
 
         logger.debug("Exchanging user token for OGC API Process execution...")
@@ -179,52 +178,34 @@ class OGCAPIProcessPlatform(BaseProcessingPlatform):
             details.endpoint, namespace, exchanged_token
         )
 
-        result: Dict[str, InlineOrRefData] = api_client.get_result(job_id=internal_job_id)
+        results: Dict[str, Any] = {}
+        job_results: Dict[str, InlineOrRefData] = api_client.get_result(job_id=internal_job_id)
 
         # results are obtained, we can now build the returning Collection
 
-        for result_name, result_value in result.items():
-            if not result_value.actual_instance:
+        for result_name, result_value in job_results.items():
+            actual_instance = result_value.actual_instance
+
+            if not actual_instance:
                 logger.debug(f"Ignoring result '{result_name}' with None value")
                 continue
 
-            if isinstance(result_value.actual_instance, InputValueNoObject) or isinstance(result_value.actual_instance, OgcLink):
-                logger.debug(f"Ignoring result '{result_name}' of unmanaged type {type(result_value)}")
-                continue
+            if isinstance(actual_instance, InputValueNoObject):
+                results[result_name] = actual_instance.actual_instance
+            elif isinstance(actual_instance, OgcLink):
+                results[result_name] = actual_instance.href
+            elif isinstance(actual_instance, QualifiedInputValue):
+                results[result_name] = actual_instance.value.actual_instance
 
-            qualified_value: QualifiedInputValue = result_value.actual_instance
-
-            logger.debug(f"Processing result\n* Name: '{result_name}'\n* media type: {qualified_value.media_type}\n* Python type: {type(qualified_value.value)}\n* schema {qualified_value.model_json_schema}...")
-
-            if isinstance(qualified_value.value, Dict) and "Collection" == qualified_value.value.get("type"):
-                logger.success(f"STAC Collection found in results!\n* Name: '{result_name}'\n* media type: {qualified_value.media_type}\n* Python type: {type(qualified_value.value)}\n* schema {qualified_value.model_json_schema}...")
-
-                return Collection.model_validate(qualified_value.value)
-
-        # result not found, send back an empty collection
-
-        return Collection(
-            id=f"{details.application}-{internal_job_id}",
-            stac_version=STAC_VERSION,
-            title=f"Results for {details.application}",
-            description=(
-                f"OGC API process result items for job '{internal_job_id}' "
-                f"of application '{details.application}'."
-            ),
-            type="Collection",
-            license="proprietary",
-            links=Links([]),
-            extent=Extent(
-                spatial=SpatialExtent(bbox=[(-180.0, -90.0, 180.0, 90.0)]),
-                temporal=TimeInterval(interval=[[None, None]]),
-            ),
-        )
+        return results
 
     async def get_service_parameters(
         self, user_token: str, details: ServiceDetails
-    ) -> List[Parameter]:
+    ) -> InOutParameters:
 
-        parameters = []
+        # TODO this part must be ovewrride to be compliant to OGC API Processes
+
+        input_parameters: List[Parameter] = []
         logger.debug(
             f"Fetching service parameters for OGC API process with ID {details.application}"
         )
@@ -286,7 +267,7 @@ class OGCAPIProcessPlatform(BaseProcessingPlatform):
                         .get("enum")
                         or []
                     )
-                    parameters.append(
+                    input_parameters.append(
                         Parameter(
                             name=input_id,
                             description=input_details.description if input_details.description else f"Parameter: {input_id}",
@@ -297,4 +278,7 @@ class OGCAPIProcessPlatform(BaseProcessingPlatform):
                         )
                     )
 
-        return parameters
+        return InOutParameters(
+            inputs=input_parameters,
+            outputs=[]
+        )
