@@ -1,3 +1,4 @@
+from fastapi import status
 from datetime import datetime
 from unittest.mock import MagicMock
 
@@ -197,7 +198,7 @@ def fake_sync_response():
     return Response(
         content='{"status":"success","data":{"message":"Synchronous job completed successfully."}}',
         media_type="application/json",
-        status_code=200,
+        status_code=status.HTTP_200_OK,
     )
 
 
@@ -225,3 +226,20 @@ def fake_parameter_result():
             description="Temporal extent parameter",
         ),
     ]
+
+
+@pytest.fixture
+def registry_request():
+    """Supply request context for service calls made outside the ASGI application."""
+    from starlette.requests import Request
+    from app.middleware.request_context import request_context
+
+    request = Request({
+        "type": "http", "path": "/test-request",
+        "query_string": b"token=secret", "headers": [],
+    })
+    token = request_context.set(request)
+    try:
+        yield request
+    finally:
+        request_context.reset(token)

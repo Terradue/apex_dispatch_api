@@ -1,14 +1,19 @@
+from app.middleware.error_handling import raise_server_error
+from fastapi import status
+from app.middleware.request_context import request_context
 import asyncio
 import json
 from typing import List
 
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from eoap_problems_registry.fastapi import ProblemRegistryException
+from fastapi import (
+    Request, HTTPException, APIRouter, Depends, Query, WebSocket, WebSocketDisconnect,
+)
 from sqlalchemy.orm import Session
 from loguru import logger
 
+from app.middleware.error_handling import PROBLEM_RESPONSES, add_request_error_details
 from app.database.db import SessionLocal, get_db
-from app.error import DispatcherException, ErrorResponse, InternalException
-from app.middleware.error_handling import get_dispatcher_error_response
 from app.schemas.jobs_status import JobsFilter, JobsStatusResponse
 from app.schemas.websockets import WSStatusMessage
 from app.services.processing import get_processing_jobs_by_user_id
@@ -25,20 +30,13 @@ DEFAULT_FILTERS = [JobsFilter.upscaling, JobsFilter.processing]
     tags=["Upscale Tasks", "Unit Jobs"],
     summary="Get a list of all upscaling tasks & processing jobs for the authenticated user",
     responses={
-        InternalException.http_status: {
-            "description": "Internal server error",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        InternalException(), "request-id"
-                    )
-                }
-            },
-        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: PROBLEM_RESPONSES[
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        ],
     },
 )
 async def get_jobs_status(
+    request: Request,
     db: Session = Depends(get_db),
     token: str = Depends(oauth2_scheme),
     filter: List[JobsFilter] = Query(
@@ -65,12 +63,14 @@ async def get_jobs_status(
             upscaling_tasks=upscaling_tasks,
             processing_jobs=processing_jobs,
         )
-    except DispatcherException as de:
+    except HTTPException as de:
         raise de
     except Exception as e:
         logger.error(f"Error retrieving job status: {e}")
-        raise InternalException(
-            message="An error occurred while retrieving the job status."
+        raise_server_error(
+            request,
+            'An error occurred while retrieving the job status.',
+            e,
         )
 
 
@@ -103,7 +103,7 @@ async def ws_jobs_status(
                         message="Starting retrieval of status",
                     ).model_dump()
                 )
-                status = await get_jobs_status(db, token, filter=filter)
+                status = await get_jobs_status(request_context.get(), db, token, filter=filter)
                 await websocket.send_json(
                     WSStatusMessage(
                         type="status",
@@ -114,12 +114,14 @@ async def ws_jobs_status(
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
-    except DispatcherException as ae:
-        logger.error(f"Dispatcher exception detected: {ae.message}")
+    except HTTPException as ae:
+        if isinstance(ae, ProblemRegistryException):
+            add_request_error_details(Request({**websocket.scope, "type": "http"}), ae)
+        logger.error(f"HTTP exception detected: {ae.detail}")
         await websocket.send_json(
-            WSStatusMessage(type="error", message=ae.message).model_dump()
+            WSStatusMessage(type="error", message=ae.detail).model_dump()
         )
-        await websocket.close(code=1011, reason=ae.error_code)
+        await websocket.close(code=1011, reason=str(ae.status_code))
     except Exception as e:
         logger.error(f"Unexpected error occurred during websocket : {e}")
         await websocket.send_json(

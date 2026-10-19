@@ -1,5 +1,6 @@
+from app.middleware.error_handling import raise_server_error
 from typing import Annotated, List
-from fastapi import Body, APIRouter, Depends, HTTPException, status
+from fastapi import Body, APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
 
 from app.schemas.enum import ProcessTypeEnum
@@ -23,6 +24,7 @@ router = APIRouter()
     summary="Get the parameters of a specific processing service.",
 )
 async def get_job_params(
+    request: Request,
     payload: Annotated[
         ParamRequest,
         Body(
@@ -53,7 +55,8 @@ async def get_job_params(
         raise e
     except Exception as e:
         logger.exception(f"Error retrieving service parameters: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while retrieving service parameters: {e}",
+        raise_server_error(
+            request,
+            'An error occurred while retrieving service parameters.',
+            e,
         )

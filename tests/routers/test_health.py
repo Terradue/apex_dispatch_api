@@ -1,3 +1,4 @@
+from fastapi import status
 from unittest.mock import patch
 
 
@@ -8,7 +9,7 @@ def test_health_ok(mock_db_status, client):
     }
     mock_db_status.return_value = db_status
     r = client.get("/health")
-    assert r.status_code == 200
+    assert r.status_code == status.HTTP_200_OK
     assert r.json() == {"status": "ok", "database": db_status}
 
 
@@ -17,5 +18,5 @@ def test_health_db_error(mock_db_status, client):
     db_status = {"status": "error", "message": "Database connection failed"}
     mock_db_status.return_value = db_status
     r = client.get("/health")
-    assert r.status_code == 503
+    assert r.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
     assert r.json() == {"status": "error", "database": db_status}

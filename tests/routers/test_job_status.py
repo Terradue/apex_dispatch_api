@@ -1,3 +1,4 @@
+from fastapi import status
 import json
 from unittest.mock import AsyncMock, patch
 
@@ -21,7 +22,7 @@ def test_unit_jobs_get_200(
     mock_get_upscaling_tasks.return_value = [fake_upscaling_task_summary]
 
     r = client.get("/jobs_status")
-    assert r.status_code == 200
+    assert r.status_code == status.HTTP_200_OK
     assert json.dumps(r.json(), indent=1) == JobsStatusResponse(
         upscaling_tasks=[fake_upscaling_task_summary],
         processing_jobs=[fake_processing_job_summary],
@@ -42,7 +43,7 @@ def test_unit_jobs_get_only_processing_200(
     mock_get_upscaling_tasks.return_value = [fake_upscaling_task_summary]
 
     r = client.get("/jobs_status?filter=processing")
-    assert r.status_code == 200
+    assert r.status_code == status.HTTP_200_OK
     assert json.dumps(r.json(), indent=1) == JobsStatusResponse(
         upscaling_tasks=[],
         processing_jobs=[fake_processing_job_summary],
@@ -63,7 +64,7 @@ def test_unit_jobs_get_only_upscaling_200(
     mock_get_upscaling_tasks.return_value = [fake_upscaling_task_summary]
 
     r = client.get("/jobs_status?filter=upscaling")
-    assert r.status_code == 200
+    assert r.status_code == status.HTTP_200_OK
     assert json.dumps(r.json(), indent=1) == JobsStatusResponse(
         upscaling_tasks=[fake_upscaling_task_summary],
         processing_jobs=[],

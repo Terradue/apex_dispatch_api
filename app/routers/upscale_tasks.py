@@ -1,7 +1,13 @@
+from app.middleware.error_handling import raise_not_found, raise_server_error
+from app.middleware.request_context import request_context
 import asyncio
 import json
 from typing import Annotated
+
+from eoap_problems_registry.fastapi import ProblemRegistryException
 from fastapi import (
+    Request,
+    HTTPException,
     BackgroundTasks,
     Body,
     APIRouter,
@@ -13,15 +19,9 @@ from fastapi import (
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from app.middleware.error_handling import PROBLEM_RESPONSES, add_request_error_details
 from app.auth import oauth2_scheme, websocket_authenticate
 from app.database.db import SessionLocal, get_db
-from app.error import (
-    DispatcherException,
-    ErrorResponse,
-    InternalException,
-    TaskNotFoundException,
-)
-from app.middleware.error_handling import get_dispatcher_error_response
 from app.schemas.enum import OutputFormatEnum, ProcessTypeEnum
 from app.schemas.unit_job import (
     ServiceDetails,
@@ -50,20 +50,13 @@ router = APIRouter()
     tags=["Upscale Tasks"],
     summary="Create a new upscaling task",
     responses={
-        InternalException.http_status: {
-            "description": "Internal server error",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        InternalException(), "request-id"
-                    )
-                }
-            },
-        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: PROBLEM_RESPONSES[
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        ],
     },
 )
 async def create_upscale_task(
+    request: Request,
     payload: Annotated[
         UpscalingTaskRequest,
         Body(
@@ -139,12 +132,14 @@ async def create_upscale_task(
             upscaling_task_id=task.id,
         )
         return task
-    except DispatcherException as de:
+    except HTTPException as de:
         raise de
     except Exception as e:
         logger.error(f"Error getting creating upscaling task: {e}")
-        raise InternalException(
-            message="An error occurred while retrieving processing job results."
+        raise_server_error(
+            request,
+            'An error occurred while retrieving processing job results.',
+            e,
         )
 
 
@@ -152,31 +147,14 @@ async def create_upscale_task(
     "/upscale_tasks/{task_id}",
     tags=["Upscale Tasks"],
     responses={
-        TaskNotFoundException.http_status: {
-            "description": "Upscaling not found",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        TaskNotFoundException(), "request-id"
-                    )
-                }
-            },
-        },
-        InternalException.http_status: {
-            "description": "Internal server error",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        InternalException(), "request-id"
-                    )
-                }
-            },
-        },
+        status.HTTP_404_NOT_FOUND: PROBLEM_RESPONSES[status.HTTP_404_NOT_FOUND],
+        status.HTTP_500_INTERNAL_SERVER_ERROR: PROBLEM_RESPONSES[
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        ],
     },
 )
 async def get_upscale_task(
+    request: Request,
     task_id: int,
     db: Session = Depends(get_db),
     token: str = Depends(oauth2_scheme),
@@ -185,14 +163,19 @@ async def get_upscale_task(
         job = await get_upscaling_task_by_user_id(token, db, task_id)
         if not job:
             logger.error(f"Upscale task {task_id} not found")
-            raise TaskNotFoundException()
+            raise_not_found(
+                request,
+                'The requested task was not found.',
+            )
         return job
-    except DispatcherException as de:
+    except HTTPException as de:
         raise de
     except Exception as e:
         logger.error(f"Error retrieving upscale task {task_id}: {e}")
-        raise InternalException(
-            message="An error occurred while retrieving the upscale task."
+        raise_server_error(
+            request,
+            'An error occurred while retrieving the upscale task.',
+            e,
         )
 
 
@@ -223,7 +206,7 @@ async def ws_task_status(
                         message="Starting retrieval of status",
                     ).model_dump()
                 )
-                status = await get_upscale_task(task_id, db, token)
+                status = await get_upscale_task(request_context.get(), task_id, db, token)
                 if not status:
                     await websocket.send_json(
                         WSTaskStatusMessage(
@@ -247,14 +230,16 @@ async def ws_task_status(
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
-    except DispatcherException as ae:
-        logger.error(f"Dispatcher exception detected: {ae.message}")
+    except HTTPException as ae:
+        if isinstance(ae, ProblemRegistryException):
+            add_request_error_details(Request({**websocket.scope, "type": "http"}), ae)
+        logger.error(f"HTTP exception detected: {ae.detail}")
         await websocket.send_json(
             WSTaskStatusMessage(
-                type="error", task_id=task_id, message=ae.message
+                type="error", task_id=task_id, message=ae.detail
             ).model_dump()
         )
-        await websocket.close(code=1011, reason=ae.error_code)
+        await websocket.close(code=1011, reason=str(ae.status_code))
     except Exception as e:
         logger.error(
             f"An error occurred while monitoring upscaling task {task_id}: {e}"

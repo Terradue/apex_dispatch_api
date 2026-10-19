@@ -18,7 +18,7 @@ def dummy_payload():
 
 def test_split_in_tiles_success(client, dummy_payload):
     response = client.post("/tiles", json=dummy_payload)
-    assert response.status_code == 201
+    assert response.status_code == status.HTTP_201_CREATED
     data = response.json()
     assert "geometries" in data
     assert len(data["geometries"]) == 36
@@ -30,4 +30,7 @@ def test_split_in_tiles_unknown_grid(mock_split, client, dummy_payload):
     mock_split.side_effect = ValueError("Unknown grid: INVALID_GRID")
     response = client.post("/tiles", json=dummy_payload)
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert "An error occurred while calculating tiles for 20x20km" in response.json()["message"]
+    assert "An error occurred while calculating tiles for 20x20km" in (
+        response.json()["errors"][0]["detail"]
+    )
+    assert response.json()["errors"][1]["detail"] == str(mock_split.side_effect)[:4096]

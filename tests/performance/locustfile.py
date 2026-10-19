@@ -4,6 +4,7 @@ Run locally:
   locust -f locust.py --headless -u 50 -r 5 --run-time 2m --host http://localhost:8000
 """
 
+from fastapi import status
 import logging
 from locust import HttpUser, task, between
 from locust.exception import StopUser
@@ -25,7 +26,7 @@ class DispatchUser(HttpUser):
 
         # simple health check at start; stop user if service unreachable
         with self.client.get("/health", name="health", catch_response=True) as r:
-            if r.status_code != 200:
+            if r.status_code != status.HTTP_200_OK:
                 r.failure(f"Health check failed: {r.status_code}")
                 # stop this virtual user if service down
                 raise StopUser()

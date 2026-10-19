@@ -1,10 +1,11 @@
+from app.middleware.error_handling import raise_server_error
 from typing import Annotated
-from fastapi import APIRouter, status, Body
+
+from fastapi import Request, HTTPException, APIRouter, status, Body
 from geojson_pydantic import GeometryCollection, Polygon
 from loguru import logger
 
-from app.error import DispatcherException, ErrorResponse, InternalException
-from app.middleware.error_handling import get_dispatcher_error_response
+from app.middleware.error_handling import PROBLEM_RESPONSES
 from app.schemas.tiles import GridTypeEnum, TileRequest
 from app.services.tiles.base import split_polygon_by_grid
 
@@ -21,7 +22,7 @@ router = APIRouter()
     "service’s Max AOI capacity), calculate the number of tiles to be"
     "processed by the upscaling service.",
     responses={
-        201: {
+        status.HTTP_201_CREATED: {
             "description": "Successfully split area of interest",
             "content": {
                 "application/json": {
@@ -57,20 +58,13 @@ router = APIRouter()
                 }
             },
         },
-        InternalException.http_status: {
-            "description": "Internal server error",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        InternalException(), "request-id"
-                    )
-                }
-            },
-        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: PROBLEM_RESPONSES[
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        ],
     },
 )
 def split_in_tiles(
+    request: Request,
     payload: Annotated[
         TileRequest,
         Body(
@@ -103,12 +97,14 @@ def split_in_tiles(
     try:
         logger.debug(f"Splitting tiles in a {payload.grid} formation")
         return split_polygon_by_grid(payload.aoi, payload.grid)
-    except DispatcherException as de:
+    except HTTPException as de:
         raise de
     except Exception as e:
         logger.error(
             f"An error occurred while calculating tiles for {payload.grid.value}: {e}"
         )
-        raise InternalException(
-            message=f"An error occurred while calculating tiles for {payload.grid.value}"
+        raise_server_error(
+            request,
+            f'An error occurred while calculating tiles for {payload.grid.value}',
+            e,
         )

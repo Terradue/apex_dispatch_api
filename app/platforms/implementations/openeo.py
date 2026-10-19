@@ -1,3 +1,6 @@
+from app.middleware.error_handling import raise_authentication_error
+from fastapi import status
+from app.middleware.request_context import request_context
 import datetime
 import hashlib
 from typing import List
@@ -13,7 +16,6 @@ from stac_pydantic import Collection
 from app.auth import exchange_token
 from app.config.schemas import AuthMethod
 from app.config.settings import settings
-from app.error import AuthException
 from app.platforms.base import BaseProcessingPlatform
 from app.platforms.dispatcher import register_platform
 from app.schemas.enum import OutputFormatEnum, ProcessingStatusEnum, ProcessTypeEnum
@@ -40,7 +42,7 @@ class OpenEOPlatform(BaseProcessingPlatform):
         return f"openeo_connection_{token_fingerprint}_{url}"
 
     def _is_auth_error(self, error: OpenEoApiError) -> bool:
-        return error.http_status_code in (403, 401)
+        return error.http_status_code in (status.HTTP_403_FORBIDDEN, status.HTTP_401_UNAUTHORIZED)
 
     def _connection_expired(self, connection: openeo.Connection) -> bool:
         """
@@ -279,9 +281,11 @@ class OpenEOPlatform(BaseProcessingPlatform):
                     )
                 except OpenEoApiError as retry_error:
                     if self._is_auth_error(retry_error):
-                        raise AuthException(
-                            retry_error.http_status_code,
-                            f"Authentication error when executing: {retry_error.message}",
+                        raise_authentication_error(
+                            request_context.get(),
+                            f'Authentication error when executing: {retry_error.message}',
+                            retry_error,
+                            status_code=retry_error.http_status_code,
                         )
                     raise retry_error
             raise e
@@ -317,9 +321,11 @@ class OpenEOPlatform(BaseProcessingPlatform):
                     )
                 except OpenEoApiError as retry_error:
                     if self._is_auth_error(retry_error):
-                        raise AuthException(
-                            retry_error.http_status_code,
-                            f"Authentication error when executing: {retry_error.message}",
+                        raise_authentication_error(
+                            request_context.get(),
+                            f'Authentication error when executing: {retry_error.message}',
+                            retry_error,
+                            status_code=retry_error.http_status_code,
                         )
                     raise retry_error
             raise e
@@ -391,10 +397,12 @@ class OpenEOPlatform(BaseProcessingPlatform):
                     return await self._get_job_results_once(user_token, job_id, details)
                 except OpenEoApiError as retry_error:
                     if self._is_auth_error(retry_error):
-                        raise AuthException(
-                            retry_error.http_status_code,
-                            "Authentication error when fetching job "
-                            f"results for job {job_id}: {retry_error.message}",
+                        raise_authentication_error(
+                            request_context.get(),
+                            f"Authentication error when fetching job results for job {job_id}: "
+                            f"{retry_error.message}",
+                            retry_error,
+                            status_code=retry_error.http_status_code,
                         )
                     raise retry_error
             raise e

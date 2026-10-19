@@ -1,17 +1,14 @@
+from app.middleware.error_handling import raise_not_found, raise_server_error
 from typing import Annotated
-from fastapi import Body, APIRouter, Depends, status
+
+from fastapi import Request, HTTPException, Body, APIRouter, Depends, status
 from loguru import logger
 from sqlalchemy.orm import Session
+from stac_pydantic import Collection
 
+from app.middleware.error_handling import PROBLEM_RESPONSES
 from app.auth import oauth2_scheme
 from app.database.db import get_db
-from app.error import (
-    DispatcherException,
-    ErrorResponse,
-    InternalException,
-    JobNotFoundException,
-)
-from app.middleware.error_handling import get_dispatcher_error_response
 from app.schemas.enum import OutputFormatEnum, ProcessTypeEnum
 from app.schemas.unit_job import (
     BaseJobRequest,
@@ -26,8 +23,6 @@ from app.services.processing import (
     get_processing_job_results,
 )
 
-from stac_pydantic import Collection
-
 # from app.auth import get_current_user
 
 router = APIRouter()
@@ -39,20 +34,13 @@ router = APIRouter()
     tags=["Unit Jobs"],
     summary="Create a new processing job",
     responses={
-        InternalException.http_status: {
-            "description": "Internal server error",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        InternalException(), "request-id"
-                    )
-                }
-            },
-        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: PROBLEM_RESPONSES[
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        ],
     },
 )
 async def create_unit_job(
+    request: Request,
     payload: Annotated[
         BaseJobRequest,
         Body(
@@ -126,12 +114,14 @@ async def create_unit_job(
     """Create a new processing job with the provided data."""
     try:
         return await create_processing_job(token, db, payload)
-    except DispatcherException as de:
+    except HTTPException as de:
         raise de
     except Exception as e:
         logger.error(f"Error creating processing job: {e}")
-        raise InternalException(
-            message="An error occurred while creating processing job."
+        raise_server_error(
+            request,
+            'An error occurred while creating processing job.',
+            e,
         )
 
 
@@ -139,44 +129,32 @@ async def create_unit_job(
     "/unit_jobs/{job_id}",
     tags=["Unit Jobs"],
     responses={
-        JobNotFoundException.http_status: {
-            "description": "Job not found",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        JobNotFoundException(), "request-id"
-                    )
-                }
-            },
-        },
-        InternalException.http_status: {
-            "description": "Internal server error",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        InternalException(), "request-id"
-                    )
-                }
-            },
-        },
+        status.HTTP_404_NOT_FOUND: PROBLEM_RESPONSES[status.HTTP_404_NOT_FOUND],
+        status.HTTP_500_INTERNAL_SERVER_ERROR: PROBLEM_RESPONSES[
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        ],
     },
 )
 async def get_job(
+    request: Request,
     job_id: int, db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)
 ) -> ProcessingJob:
     try:
         job = await get_processing_job_by_user_id(token, db, job_id)
         if not job:
-            raise JobNotFoundException()
+            raise_not_found(
+                request,
+                'The requested job was not found.',
+            )
         return job
-    except DispatcherException as de:
+    except HTTPException as de:
         raise de
     except Exception as e:
         logger.error(f"Error retrieving processing job {job_id}: {e}")
-        raise InternalException(
-            message="An error occurred while retrieving the processing job."
+        raise_server_error(
+            request,
+            'An error occurred while retrieving the processing job.',
+            e,
         )
 
 
@@ -184,44 +162,32 @@ async def get_job(
     "/unit_jobs/{job_id}/results",
     tags=["Unit Jobs"],
     responses={
-        JobNotFoundException.http_status: {
-            "description": "Job not found",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        JobNotFoundException(), "request-id"
-                    )
-                }
-            },
-        },
-        InternalException.http_status: {
-            "description": "Internal server error",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        InternalException(), "request-id"
-                    )
-                }
-            },
-        },
+        status.HTTP_404_NOT_FOUND: PROBLEM_RESPONSES[status.HTTP_404_NOT_FOUND],
+        status.HTTP_500_INTERNAL_SERVER_ERROR: PROBLEM_RESPONSES[
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        ],
     },
 )
 async def get_job_results(
+    request: Request,
     job_id: int, db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)
 ) -> Collection | None:
     try:
         result = await get_processing_job_results(token, db, job_id)
         if not result:
-            raise JobNotFoundException()
+            raise_not_found(
+                request,
+                'The requested job was not found.',
+            )
         return result
-    except DispatcherException as de:
+    except HTTPException as de:
         raise de
     except Exception as e:
         logger.error(f"Error getting results for processing job {job_id}: {e}")
-        raise InternalException(
-            message="An error occurred while retrieving processing job results."
+        raise_server_error(
+            request,
+            'An error occurred while retrieving processing job results.',
+            e,
         )
 
 
@@ -229,42 +195,30 @@ async def get_job_results(
     "/unit_jobs/{job_id}",
     tags=["Unit Jobs"],
     responses={
-        JobNotFoundException.http_status: {
-            "description": "Job not found",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        JobNotFoundException(), "request-id"
-                    )
-                }
-            },
-        },
-        InternalException.http_status: {
-            "description": "Internal server error",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        InternalException(), "request-id"
-                    )
-                }
-            },
-        },
+        status.HTTP_404_NOT_FOUND: PROBLEM_RESPONSES[status.HTTP_404_NOT_FOUND],
+        status.HTTP_500_INTERNAL_SERVER_ERROR: PROBLEM_RESPONSES[
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        ],
     },
 )
 async def delete_job(
+    request: Request,
     job_id: int, db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)
 ) -> None:
     try:
         job = await get_processing_job_by_user_id(token, db, job_id)
         if not job:
-            raise JobNotFoundException()
+            raise_not_found(
+                request,
+                'The requested job was not found.',
+            )
         await delete_processing_job(token, db, job_id)
-    except DispatcherException as de:
+    except HTTPException as de:
         raise de
     except Exception as e:
         logger.error(f"Error deleting processing job {job_id}: {e}")
-        raise InternalException(
-            message="An error occurred while deleting the processing job."
+        raise_server_error(
+            request,
+            'An error occurred while deleting the processing job.',
+            e,
         )

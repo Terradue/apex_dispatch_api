@@ -1,9 +1,11 @@
+from starlette.requests import Request
 import json
 from unittest.mock import patch
 
 from fastapi import status
 
-from app.error import InternalException
+from eoap_problems_registry import ServerError
+from eoap_problems_registry.fastapi import ProblemRegistryException
 
 
 @patch("app.routers.sync_jobs.create_synchronous_job")
@@ -30,7 +32,10 @@ def test_sync_jobs_create_500(
 
     r = client.post("/sync_jobs", json=fake_processing_job_request.model_dump())
     assert r.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert "An error occurred while creating the synchronous job." in r.json().get("message", "")
+    assert "An error occurred while creating the synchronous job." in (
+        r.json()["errors"][0]["detail"]
+    )
+    assert r.json()["errors"][1]["detail"] == str(mock_create_sync_job.side_effect)[:4096]
 
 
 @patch("app.routers.sync_jobs.create_synchronous_job")
@@ -40,8 +45,10 @@ def test_sync_jobs_create_internal_error(
     fake_processing_job_request,
 ):
 
-    mock_create_sync_job.side_effect = InternalException()
+    mock_create_sync_job.side_effect = ProblemRegistryException(
+        request=Request({"type": "http", "path": "/", "headers": []}), problem=ServerError()
+    )
 
     r = client.post("/sync_jobs", json=fake_processing_job_request.model_dump())
     assert r.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert "An internal server error occurred." in r.json().get("message", "")
+    assert ServerError().detail == r.json()["detail"]

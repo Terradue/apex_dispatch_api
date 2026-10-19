@@ -1,3 +1,4 @@
+from fastapi import status
 import datetime
 import json
 from types import SimpleNamespace
@@ -9,7 +10,7 @@ import requests
 
 from app.config.schemas import AuthMethod, BackendAuthConfig
 from app.config.settings import settings
-from app.error import AuthException
+from eoap_problems_registry.fastapi import UnauthorizedException
 from app.platforms.implementations.openeo import (
     OpenEOPlatform,
 )
@@ -146,12 +147,16 @@ async def test_execute_job_process_id_failure(
 @patch.object(
     OpenEOPlatform,
     "_build_datacube",
-    side_effect=OpenEoApiError(message="Woops", code="Test", http_status_code=401),
+    side_effect=OpenEoApiError(
+        message="Woops",
+        code="Test",
+        http_status_code=status.HTTP_401_UNAUTHORIZED,
+    ),
 )
 async def test_execute_job_process_openeo_auth_error(
     mock_pid, mock_connect, mock_transform, platform, service_details
 ):
-    with pytest.raises(AuthException, match="Authentication error"):
+    with pytest.raises(UnauthorizedException, match="Authentication error"):
         await platform.execute_job(
             user_token="fake_token",
             title="Test Job",
@@ -167,7 +172,11 @@ async def test_execute_job_process_openeo_auth_error(
 @patch.object(
     OpenEOPlatform,
     "_build_datacube",
-    side_effect=OpenEoApiError(message="Woops", code="Test", http_status_code=500),
+    side_effect=OpenEoApiError(
+        message="Woops",
+        code="Test",
+        http_status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    ),
 )
 async def test_execute_job_process_openeo_error(
     mock_pid, mock_connect, mock_transform, platform, service_details
@@ -231,7 +240,7 @@ async def test_get_job_status_retries_after_auth_error(
 ):
     first_job = MagicMock()
     first_job.status.side_effect = OpenEoApiError(
-        message="expired", code="TokenExpired", http_status_code=401
+        message="expired", code="TokenExpired", http_status_code=status.HTTP_401_UNAUTHORIZED
     )
 
     second_job = MagicMock()
@@ -261,7 +270,7 @@ async def test_get_job_status_returns_unknown_when_refresh_fails(
 ):
     first_job = MagicMock()
     first_job.status.side_effect = OpenEoApiError(
-        message="expired", code="TokenExpired", http_status_code=401
+        message="expired", code="TokenExpired", http_status_code=status.HTTP_401_UNAUTHORIZED
     )
 
     first_connection = MagicMock()
@@ -285,7 +294,9 @@ async def test_get_job_status_non_auth_openeo_error_returns_unknown(
 ):
     job = MagicMock()
     job.status.side_effect = OpenEoApiError(
-        message="server-error", code="ServerError", http_status_code=500
+        message="server-error",
+        code="ServerError",
+        http_status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )
     connection = MagicMock()
     connection.job.return_value = job
@@ -326,10 +337,10 @@ async def test_get_job_results_openeo_auth_error(
     mock_connection, platform, service_details
 ):
     mock_connection.side_effect = OpenEoApiError(
-        message="Woops", code="Test", http_status_code=401
+        message="Woops", code="Test", http_status_code=status.HTTP_401_UNAUTHORIZED
     )
     details = ServiceDetails(endpoint="foo", application="bar")
-    with pytest.raises(AuthException, match="Authentication error"):
+    with pytest.raises(UnauthorizedException, match="Authentication error"):
         await platform.get_job_results("foobar", "job123", details)
 
 
@@ -337,7 +348,7 @@ async def test_get_job_results_openeo_auth_error(
 @patch.object(OpenEOPlatform, "_setup_connection")
 async def test_get_job_results_openeo_error(mock_connection, platform, service_details):
     mock_connection.side_effect = OpenEoApiError(
-        message="Woops", code="Test", http_status_code=500
+        message="Woops", code="Test", http_status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
     )
     details = ServiceDetails(endpoint="foo", application="bar")
     with pytest.raises(OpenEoApiError, match="Woops"):
@@ -669,7 +680,7 @@ async def test_execute_sync_job_success(
 ):
     mock_response = MagicMock()
     mock_response.content = '{"id": "foobar"}'
-    mock_response.status_code = 200
+    mock_response.status_code = status.HTTP_200_OK
     mock_connection = MagicMock()
     mock_connect.return_value = mock_connection
     mock_connection.datacube_from_process.return_value.execute.return_value = (
@@ -702,7 +713,7 @@ async def test_execute_job_retries_after_auth_error(
     first_service = MagicMock()
     first_job = MagicMock()
     first_job.start.side_effect = OpenEoApiError(
-        message="expired", code="TokenExpired", http_status_code=401
+        message="expired", code="TokenExpired", http_status_code=status.HTTP_401_UNAUTHORIZED
     )
     first_service.create_job.return_value = first_job
 
@@ -735,7 +746,7 @@ async def test_get_job_results_retries_after_auth_error(
 ):
     first_job = MagicMock()
     first_job.get_results.side_effect = OpenEoApiError(
-        message="expired", code="TokenExpired", http_status_code=401
+        message="expired", code="TokenExpired", http_status_code=status.HTTP_401_UNAUTHORIZED
     )
 
     second_metadata = fake_result.model_dump()
@@ -765,12 +776,16 @@ async def test_get_job_results_retries_after_auth_error(
 @patch.object(
     OpenEOPlatform,
     "_build_datacube",
-    side_effect=OpenEoApiError(message="Woops", code="Test", http_status_code=401),
+    side_effect=OpenEoApiError(
+        message="Woops",
+        code="Test",
+        http_status_code=status.HTTP_401_UNAUTHORIZED,
+    ),
 )
 async def test_execute_sync_job_openeo_auth_error(
     mock_pid, mock_connect, platform, service_details
 ):
-    with pytest.raises(AuthException, match="Authentication error"):
+    with pytest.raises(UnauthorizedException, match="Authentication error"):
         await platform.execute_synchronous_job(
             user_token="fake_token",
             title="Test Job",
@@ -785,7 +800,11 @@ async def test_execute_sync_job_openeo_auth_error(
 @patch.object(
     OpenEOPlatform,
     "_build_datacube",
-    side_effect=OpenEoApiError(message="Woops", code="Test", http_status_code=500),
+    side_effect=OpenEoApiError(
+        message="Woops",
+        code="Test",
+        http_status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    ),
 )
 async def test_execute_sync_job_openeo_error(
     mock_pid, mock_connect, platform, service_details
@@ -1105,3 +1124,26 @@ async def test_transform_parameters_raises_for_invalid_polygon_coordinates(
         await platform._transform_parameters(
             user_token="fake-token", details=service_details, parameters=parameters
         )
+
+
+@pytest.mark.asyncio
+async def test_get_job_results_forbidden_after_retry(platform, service_details):
+    from eoap_problems_registry.fastapi import ForbiddenException
+
+    failure = OpenEoApiError(
+        message="Access denied",
+        code="Forbidden",
+        http_status_code=status.HTTP_403_FORBIDDEN,
+    )
+    with patch.object(platform, "_get_job_results_once", side_effect=failure), patch.object(
+        platform, "_refresh_connection", new_callable=AsyncMock
+    ):
+        with pytest.raises(ForbiddenException) as exc_info:
+            await platform.get_job_results("token", "job-1", service_details)
+
+    assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
+    assert '"type":"https://eoap.github.io/problems-registry/forbidden"' in exc_info.value.detail
+    assert "Access denied" in exc_info.value.detail
+
+
+pytestmark = pytest.mark.usefixtures("registry_request")

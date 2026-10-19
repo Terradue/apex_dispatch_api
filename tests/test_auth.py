@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 import httpx
@@ -6,7 +8,8 @@ from fastapi import status
 from app.auth import exchange_token, _exchange_token_for_provider
 from app.config.settings import settings
 from app.config.schemas import BackendAuthConfig, AuthMethod
-from app.error import AuthException
+from fastapi import HTTPException
+from eoap_problems_registry.fastapi import ServerErrorException, UnauthorizedException
 
 
 # Tests for exchange_token function
@@ -93,11 +96,11 @@ async def test_exchange_token_for_provider_missing_client_credentials():
         settings.keycloak_client_id = ""
         settings.keycloak_client_secret = ""
 
-        with pytest.raises(AuthException) as exc_info:
+        with pytest.raises(ServerErrorException) as exc_info:
             await _exchange_token_for_provider("token", "openeo")
 
-        assert exc_info.value.http_status == status.HTTP_500_INTERNAL_SERVER_ERROR
-        assert "not configured" in exc_info.value.message
+        assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "not configured" in json.loads(exc_info.value.detail)["errors"][0]["detail"]
     finally:
         settings.keycloak_client_id = original_client_id
         settings.keycloak_client_secret = original_client_secret
@@ -121,11 +124,11 @@ async def test_exchange_token_for_provider_network_error(mock_client_class):
         mock_client.post.side_effect = httpx.RequestError("Network error")
         mock_client_class.return_value = mock_client
 
-        with pytest.raises(AuthException) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             await _exchange_token_for_provider("token", "openeo")
 
-        assert exc_info.value.http_status == status.HTTP_502_BAD_GATEWAY
-        assert "Could not authenticate" in exc_info.value.message
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "Could not authenticate" in exc_info.value.detail
     finally:
         settings.keycloak_client_id = original_client_id
         settings.keycloak_client_secret = original_client_secret
@@ -149,16 +152,16 @@ async def test_exchange_token_for_provider_invalid_json_response(mock_client_cla
 
         # Mock response with invalid JSON
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = status.HTTP_200_OK
         mock_response.json.side_effect = ValueError("Invalid JSON")
         mock_client.post.return_value = mock_response
         mock_client_class.return_value = mock_client
 
-        with pytest.raises(AuthException) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             await _exchange_token_for_provider("token", "openeo")
 
-        assert exc_info.value.http_status == status.HTTP_502_BAD_GATEWAY
-        assert "Could not authenticate" in exc_info.value.message
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "Could not authenticate" in exc_info.value.detail
     finally:
         settings.keycloak_client_id = original_client_id
         settings.keycloak_client_secret = original_client_secret
@@ -182,7 +185,7 @@ async def test_exchange_token_for_provider_token_exchange_failed(mock_client_cla
 
         # Mock response with 401 error
         mock_response = MagicMock()
-        mock_response.status_code = 401
+        mock_response.status_code = status.HTTP_401_UNAUTHORIZED
         mock_response.json.return_value = {
             "error": "unauthorized",
             "error_description": "Invalid credentials",
@@ -191,11 +194,11 @@ async def test_exchange_token_for_provider_token_exchange_failed(mock_client_cla
         mock_client.post.return_value = mock_response
         mock_client_class.return_value = mock_client
 
-        with pytest.raises(AuthException) as exc_info:
+        with pytest.raises(UnauthorizedException) as exc_info:
             await _exchange_token_for_provider("token", "openeo")
 
-        assert exc_info.value.http_status == status.HTTP_401_UNAUTHORIZED
-        assert "Could not authenticate" in exc_info.value.message
+        assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "Could not authenticate" in json.loads(exc_info.value.detail)["errors"][0]["detail"]
     finally:
         settings.keycloak_client_id = original_client_id
         settings.keycloak_client_secret = original_client_secret
@@ -219,7 +222,7 @@ async def test_exchange_token_for_provider_account_not_linked(mock_client_class)
 
         # Mock response with not_linked error
         mock_response = MagicMock()
-        mock_response.status_code = 400
+        mock_response.status_code = status.HTTP_400_BAD_REQUEST
         mock_response.json.return_value = {
             "error": "not_linked",
             "error_description": "Account not linked",
@@ -228,12 +231,12 @@ async def test_exchange_token_for_provider_account_not_linked(mock_client_class)
         mock_client.post.return_value = mock_response
         mock_client_class.return_value = mock_client
 
-        with pytest.raises(AuthException) as exc_info:
+        with pytest.raises(UnauthorizedException) as exc_info:
             await _exchange_token_for_provider("token", "openeo")
 
-        assert exc_info.value.http_status == status.HTTP_401_UNAUTHORIZED
-        assert "link your account" in exc_info.value.message
-        assert "Account Dashboard" in exc_info.value.message
+        assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "link your account" in json.loads(exc_info.value.detail)["errors"][0]["detail"]
+        assert "Account Dashboard" in json.loads(exc_info.value.detail)["errors"][0]["detail"]
     finally:
         settings.keycloak_client_id = original_client_id
         settings.keycloak_client_secret = original_client_secret
@@ -257,7 +260,7 @@ async def test_exchange_token_for_provider_success(mock_client_class):
 
         # Mock successful response
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = status.HTTP_200_OK
         mock_response.json.return_value = {
             "access_token": "new-platform-token",
             "expires_in": 3600,
@@ -274,3 +277,39 @@ async def test_exchange_token_for_provider_success(mock_client_class):
     finally:
         settings.keycloak_client_id = original_client_id
         settings.keycloak_client_secret = original_client_secret
+
+
+def test_invalid_token_raises_registry_unauthorized():
+    from app.auth import _decode_token
+
+    with patch(
+        "app.auth.jwks_client.get_signing_key_from_jwt", side_effect=ValueError("bad token")
+    ):
+        with pytest.raises(UnauthorizedException) as exc_info:
+            _decode_token("invalid")
+
+    problem = json.loads(exc_info.value.detail)
+    assert problem["status"] == status.HTTP_401_UNAUTHORIZED
+    assert problem["type"].endswith("/unauthorized")
+    assert "Could not validate credentials" in problem["errors"][0]["detail"]
+    assert exc_info.value.headers["WWW-Authenticate"] == "Bearer"
+
+
+pytestmark = pytest.mark.usefixtures("registry_request")
+
+
+def test_authentication_problem_uses_incoming_request_url(client, fake_processing_job_request):
+    with patch(
+        "app.auth.jwks_client.get_signing_key_from_jwt", side_effect=ValueError("bad token")
+    ):
+        response = client.post(
+            "/unit_jobs?token=secret", json=fake_processing_job_request.model_dump(),
+            headers={"Authorization": "Bearer private-token"},
+        )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.json()["instance"] == "http://testserver/unit_jobs"
+    assert response.json()["type"].endswith("/unauthorized")
+    assert {"header": "Authorization", "detail": "[redacted]"} in response.json()["errors"]
+    assert "private-token" not in response.text
+    assert response.headers["WWW-Authenticate"] == "Bearer"

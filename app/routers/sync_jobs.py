@@ -1,9 +1,10 @@
+from app.middleware.error_handling import raise_server_error
 from typing import Annotated
-from fastapi import Body, APIRouter, Depends, Response, status
+
+from fastapi import Request, HTTPException, Body, APIRouter, Depends, Response, status
 from loguru import logger
 
-from app.error import DispatcherException, ErrorResponse, InternalException
-from app.middleware.error_handling import get_dispatcher_error_response
+from app.middleware.error_handling import PROBLEM_RESPONSES
 from app.schemas.enum import OutputFormatEnum, ProcessTypeEnum
 from app.schemas.unit_job import (
     BaseJobRequest,
@@ -26,20 +27,13 @@ router = APIRouter()
     tags=["Unit Jobs"],
     summary="Create a new processing job",
     responses={
-        InternalException.http_status: {
-            "description": "Internal server error",
-            "model": ErrorResponse,
-            "content": {
-                "application/json": {
-                    "example": get_dispatcher_error_response(
-                        InternalException(), "request-id"
-                    )
-                }
-            },
-        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: PROBLEM_RESPONSES[
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        ],
     },
 )
 async def create_sync_job(
+    request: Request,
     payload: Annotated[
         BaseJobRequest,
         Body(
@@ -112,10 +106,12 @@ async def create_sync_job(
     """Initiate a synchronous processing job with the provided data and return the result."""
     try:
         return await create_synchronous_job(token, payload)
-    except DispatcherException as de:
+    except HTTPException as de:
         raise de
     except Exception as e:
         logger.error(f"Error creating synchronous job: {e}")
-        raise InternalException(
-            message="An error occurred while creating the synchronous job."
+        raise_server_error(
+            request,
+            'An error occurred while creating the synchronous job.',
+            e,
         )

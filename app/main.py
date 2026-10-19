@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.middleware.correlation_id import add_correlation_id
-from app.middleware.error_handling import register_exception_handlers
+from app.middleware.request_context import RequestContextMiddleware
+from app.middleware.error_handling import PROBLEM_RESPONSES, register_exception_handlers
 from app.platforms.dispatcher import load_processing_platforms
 from app.services.tiles.base import load_grids
 from app.config.logger import setup_logging
@@ -26,6 +27,7 @@ app = FastAPI(
     title=settings.app_name,
     description=settings.app_description,
     version=settings.app_version,
+    responses=PROBLEM_RESPONSES,
 )
 
 app.add_middleware(
@@ -37,6 +39,7 @@ app.add_middleware(
 )
 
 app.middleware("http")(add_correlation_id)
+app.add_middleware(RequestContextMiddleware)
 register_exception_handlers(app)
 
 # include routers

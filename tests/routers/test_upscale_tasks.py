@@ -1,10 +1,12 @@
+from starlette.requests import Request
 import json
 from unittest.mock import AsyncMock, patch
 
 from fastapi import WebSocketDisconnect, status
 import pytest
 
-from app.error import InternalException
+from eoap_problems_registry import ServerError
+from eoap_problems_registry.fastapi import ProblemRegistryException
 
 
 @patch("app.routers.upscale_tasks.create_upscaling_processing_jobs")
@@ -36,9 +38,10 @@ def test_upscaling_task_create_500(
 
     r = client.post("/upscale_tasks", json=fake_upscaling_task_request.model_dump())
     assert r.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert "An error occurred while retrieving processing job results." in r.json().get(
-        "message", ""
+    assert "An error occurred while retrieving processing job results." in (
+        r.json()["errors"][0]["detail"]
     )
+    assert r.json()["errors"][1]["detail"] == str(mock_create_upscaling_task.side_effect)[:4096]
 
 
 @patch("app.routers.upscale_tasks.create_upscaling_task")
@@ -48,11 +51,13 @@ def test_upscaling_task_create_internal_error(
     fake_upscaling_task_request,
 ):
 
-    mock_create_upscaling_task.side_effect = InternalException()
+    mock_create_upscaling_task.side_effect = ProblemRegistryException(
+        request=Request({"type": "http", "path": "/", "headers": []}), problem=ServerError()
+    )
 
     r = client.post("/upscale_tasks", json=fake_upscaling_task_request.model_dump())
     assert r.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert "An internal server error occurred." in r.json().get("message", "")
+    assert ServerError().detail == r.json()["detail"]
 
 
 @patch("app.routers.upscale_tasks.get_upscaling_task_by_user_id")
@@ -78,7 +83,7 @@ def test_upscaling_task_get_task_404(mock_get_upscale_task, client):
 
     r = client.get("/upscale_tasks/1")
     assert r.status_code == status.HTTP_404_NOT_FOUND
-    assert "The requested task was not found." in r.json().get("message", "")
+    assert "The requested task was not found." in r.json()["errors"][0]["detail"]
 
 
 @patch("app.routers.upscale_tasks.get_upscaling_task_by_user_id")
@@ -88,20 +93,21 @@ def test_upscaling_task_get_task_500(mock_get_upscale_task, client):
 
     r = client.get("/upscale_tasks/1")
     assert r.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert "An error occurred while retrieving the upscale task" in r.json().get(
-        "message", ""
-    )
+    assert "An error occurred while retrieving the upscale task" in r.json()["errors"][0]["detail"]
+    assert r.json()["errors"][1]["detail"] == str(mock_get_upscale_task.side_effect)[:4096]
 
 
 @patch("app.routers.upscale_tasks.get_upscaling_task_by_user_id")
 def test_upscaling_task_get_task_internal_error(mock_get_upscale_task, client):
 
-    error = InternalException()
+    error = ProblemRegistryException(
+        request=Request({"type": "http", "path": "/", "headers": []}), problem=ServerError()
+    )
     mock_get_upscale_task.side_effect = error
 
     r = client.get("/upscale_tasks/1")
     assert r.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert error.message in r.json().get("message", "")
+    assert ServerError().detail == r.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -158,3 +164,19 @@ async def test_ws_jobs_status_not_found(
         data = websocket.receive_json()
         assert data["type"] == "error"
         assert data["message"].lower() == "task not found"
+
+
+@patch("app.routers.upscale_tasks.get_upscale_task", new_callable=AsyncMock)
+def test_ws_registry_error_includes_task_id(mock_get_task, client):
+    from eoap_problems_registry.fastapi import NotFoundException
+
+    mock_get_task.side_effect = NotFoundException(
+        request=Request({"type": "http", "path": "/", "headers": []})
+    )
+    with client.websocket_connect("/ws/upscale_tasks/42?token=123") as websocket:
+        websocket.receive_json()
+        websocket.receive_json()
+        message = websocket.receive_json()
+        assert message["type"] == "error"
+        problem = json.loads(message["message"])
+        assert {"parameter": "task_id", "detail": "42"} in problem["errors"]

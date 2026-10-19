@@ -1,14 +1,16 @@
+from app.middleware.error_handling import raise_authentication_error, raise_server_error
+from app.middleware.request_context import request_context
 from typing import Any, Dict
+
 import httpx
 import jwt
 from fastapi import Depends, WebSocket, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from jwt import PyJWKClient
 from loguru import logger
+from fastapi import HTTPException
 
-from app.error import AuthException, DispatcherException
 from app.schemas.websockets import WSStatusMessage
-
 from .config.settings import settings
 
 # Keycloak OIDC info
@@ -41,10 +43,12 @@ def _decode_token(token: str):
             issuer=KEYCLOAK_BASE_URL,
         )
         return payload
-    except Exception:
-        raise AuthException(
-            http_status=status.HTTP_401_UNAUTHORIZED,
-            message="Could not validate credentials. Please retry signing in.",
+    except Exception as exc:
+        raise_authentication_error(
+            request_context.get(),
+            'Could not validate credentials. Please retry signing in.',
+            exc,
+            headers={'WWW-Authenticate': 'Bearer'},
         )
 
 
@@ -69,12 +73,12 @@ async def websocket_authenticate(websocket: WebSocket) -> str | None:
     try:
         await websocket.accept()
         return token
-    except DispatcherException as ae:
-        logger.error(f"Dispatcher exception detected: {ae.message}")
+    except HTTPException as ae:
+        logger.error(f"Dispatcher exception detected: {ae.detail}")
         await websocket.send_json(
-            WSStatusMessage(type="error", message=ae.message).model_dump()
+            WSStatusMessage(type="error", message=str(ae.detail)).model_dump()
         )
-        await websocket.close(code=1008, reason=ae.error_code)
+        await websocket.close(code=1008, reason=str(ae.status_code))
         return None
     except Exception as e:
         logger.error(f"Unexpected error occurred during websocket authentication: {e}")
@@ -128,15 +132,16 @@ async def _exchange_token_for_provider(
 
     :return: The token response (dict) on success.
 
-    :raise: Raises AuthException with an appropriate status and message on error.
+    :raise: Registry exceptions for authentication/configuration errors; HTTPException
+        for upstream gateway failures (502).
     """
     token_url = f"{KEYCLOAK_BASE_URL}/protocol/openid-connect/token"
 
     # Check if the necessary settings are in place
     if not settings.keycloak_client_id:
-        raise AuthException(
-            http_status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Token exchange not configured on the server (missing client credentials).",
+        raise_server_error(
+            request_context.get(),
+            'Token exchange not configured on the server (missing client credentials).',
         )
 
     payload = {
@@ -152,9 +157,9 @@ async def _exchange_token_for_provider(
             resp = await client.post(token_url, data=payload)
     except httpx.RequestError as exc:
         logger.error(f"Token exchange network error for provider={provider}: {exc}")
-        raise AuthException(
-            http_status=status.HTTP_502_BAD_GATEWAY,
-            message=(
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
                 f"Could not authenticate with {provider}. Please contact APEx support or reach out "
                 "through the <a href='https://forum.apex.esa.int/'>APEx User Forum</a>."
             ),
@@ -167,37 +172,39 @@ async def _exchange_token_for_provider(
         logger.error(
             f"Token exchange invalid JSON response (status={resp.status_code})"
         )
-        raise AuthException(
-            http_status=status.HTTP_502_BAD_GATEWAY,
-            message=(
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
                 f"Could not authenticate with {provider}. Please contact APEx support or reach out "
                 "through the <a href='https://forum.apex.esa.int/'>APEx User Forum</a>."
             ),
         )
 
-    if resp.status_code != 200:
+    if resp.status_code != status.HTTP_200_OK:
         # Keycloak returns error and error_description fields for token errors
         err = body.get("error_description") or body.get("error") or resp.text
         logger.error(
             f"Token exchange failed for provider={provider}, status={resp.status_code}, error={err}"
         )
-        # Map common upstream statuses to meaningful client statuses
-        client_status = (
-            status.HTTP_401_UNAUTHORIZED
-            if resp.status_code in (400, 401, 403)
-            else status.HTTP_502_BAD_GATEWAY
+        message = (
+            f"Please link your account with {provider} in your "
+            f"<a href='{settings.keycloak_host}/realms/{settings.keycloak_realm}/"
+            "account'>Account Dashboard</a>"
+            if body.get("error", "") == "not_linked"
+            else f"Could not authenticate with {provider}: {err}"
         )
-
-        raise AuthException(
-            http_status=client_status,
-            message=(
-                f"Please link your account with {provider} in your "
-                f"<a href='{settings.keycloak_host}/realms/{settings.keycloak_realm}/"
-                "account'>Account Dashboard</a>"
-                if body.get("error", "") == "not_linked"
-                else f"Could not authenticate with {provider}: {err}"
-            ),
-        )
+        if resp.status_code in (
+            status.HTTP_400_BAD_REQUEST,
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_403_FORBIDDEN,
+        ):
+            raise_authentication_error(
+                request_context.get(),
+                message,
+                headers={'WWW-Authenticate': 'Bearer'},
+            )
+        # The registry has no BadGateway exception; retain upstream failure semantics.
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=message)
 
     # Successful exchange, return token response (access_token, expires_in, etc.)
     return body
