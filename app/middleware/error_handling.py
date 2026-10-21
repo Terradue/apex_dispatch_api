@@ -1,10 +1,10 @@
 from fastapi import status
 import json
 import traceback
-from typing import Any, NoReturn
+from typing import NoReturn
 
-import eoap_problems_registry as registry
-from eoap_problems_registry.fastapi import (
+import http_apis_problems_detail as registry
+from http_apis_problems_detail.fastapi import (
     ProblemRegistryException,
     BadRequestException,
     ForbiddenException,
@@ -24,20 +24,6 @@ from loguru import logger
 from starlette.exceptions import HTTPException
 
 from app.middleware.correlation_id import correlation_id_ctx
-
-
-PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
-    code: {"$ref": f"https://eoap.github.io/problems-registry/openapi.yaml"
-           f"#/components/responses/{name}"}
-    for code, name in (
-        (status.HTTP_400_BAD_REQUEST, "BadRequest"),
-        (status.HTTP_401_UNAUTHORIZED, "Unauthorized"),
-        (status.HTTP_403_FORBIDDEN, "Forbidden"),
-        (status.HTTP_404_NOT_FOUND, "NotFound"),
-        (status.HTTP_422_UNPROCESSABLE_ENTITY, "ValidationError"),
-        (status.HTTP_500_INTERNAL_SERVER_ERROR, "ServerError"),
-    )
-}
 
 
 HTTP_PROBLEM_EXCEPTIONS = {

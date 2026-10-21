@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 from fastapi import WebSocketDisconnect, status
 import pytest
 
-from eoap_problems_registry import ServerError
-from eoap_problems_registry.fastapi import ProblemRegistryException
+from http_apis_problems_detail import ServerError
+from http_apis_problems_detail.fastapi import ProblemRegistryException
 
 
 @patch("app.routers.upscale_tasks.create_upscaling_processing_jobs")
@@ -168,7 +168,7 @@ async def test_ws_jobs_status_not_found(
 
 @patch("app.routers.upscale_tasks.get_upscale_task", new_callable=AsyncMock)
 def test_ws_registry_error_includes_task_id(mock_get_task, client):
-    from eoap_problems_registry.fastapi import NotFoundException
+    from http_apis_problems_detail.fastapi import NotFoundException
 
     mock_get_task.side_effect = NotFoundException(
         request=Request({"type": "http", "path": "/", "headers": []})

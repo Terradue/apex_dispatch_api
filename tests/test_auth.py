@@ -9,7 +9,7 @@ from app.auth import exchange_token, _exchange_token_for_provider
 from app.config.settings import settings
 from app.config.schemas import BackendAuthConfig, AuthMethod
 from fastapi import HTTPException
-from eoap_problems_registry.fastapi import ServerErrorException, UnauthorizedException
+from http_apis_problems_detail.fastapi import ServerErrorException, UnauthorizedException
 
 
 # Tests for exchange_token function

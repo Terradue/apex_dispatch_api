@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 from fastapi import status
 
-from eoap_problems_registry import ServerError
-from eoap_problems_registry.fastapi import ProblemRegistryException
+from http_apis_problems_detail import ServerError
+from http_apis_problems_detail.fastapi import ProblemRegistryException
 
 
 @patch("app.routers.unit_jobs.create_processing_job")

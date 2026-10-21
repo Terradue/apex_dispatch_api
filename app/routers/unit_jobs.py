@@ -6,7 +6,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 from stac_pydantic import Collection
 
-from app.middleware.error_handling import PROBLEM_RESPONSES
+from http_apis_problems_detail.fastapi import PROBLEM_RESPONSES
 from app.auth import oauth2_scheme
 from app.database.db import get_db
 from app.schemas.enum import OutputFormatEnum, ProcessTypeEnum

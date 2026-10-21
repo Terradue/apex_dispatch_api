@@ -3,14 +3,14 @@ import json
 from pathlib import Path
 
 import pytest
-from eoap_problems_registry import NotFound
-from eoap_problems_registry.fastapi import ProblemRegistryException
+from http_apis_problems_detail import NotFound
+from http_apis_problems_detail.fastapi import PROBLEM_RESPONSES, ProblemRegistryException
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, field_validator
 
 from app.middleware.correlation_id import add_correlation_id
-from app.middleware.error_handling import PROBLEM_RESPONSES, register_exception_handlers
+from app.middleware.error_handling import register_exception_handlers
 
 
 @pytest.fixture
@@ -134,7 +134,7 @@ def test_openapi_reuses_registry_responses():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scope_type,scheme", [("http", "https"), ("websocket", "wss")])
 async def test_service_request_context_preserves_url_and_is_reset(scope_type, scheme):
-    from eoap_problems_registry.fastapi import UnauthorizedException
+    from http_apis_problems_detail.fastapi import UnauthorizedException
     from app.middleware.request_context import RequestContextMiddleware, request_context
 
     scope = {

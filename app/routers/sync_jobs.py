@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import Request, HTTPException, Body, APIRouter, Depends, Response, status
 from loguru import logger
 
-from app.middleware.error_handling import PROBLEM_RESPONSES
+from http_apis_problems_detail.fastapi import PROBLEM_RESPONSES
 from app.schemas.enum import OutputFormatEnum, ProcessTypeEnum
 from app.schemas.unit_job import (
     BaseJobRequest,

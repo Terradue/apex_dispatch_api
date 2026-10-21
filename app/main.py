@@ -1,9 +1,10 @@
+from http_apis_problems_detail.fastapi import PROBLEM_RESPONSES
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.middleware.correlation_id import add_correlation_id
 from app.middleware.request_context import RequestContextMiddleware
-from app.middleware.error_handling import PROBLEM_RESPONSES, register_exception_handlers
+from app.middleware.error_handling import register_exception_handlers
 from app.platforms.dispatcher import load_processing_platforms
 from app.services.tiles.base import load_grids
 from app.config.logger import setup_logging

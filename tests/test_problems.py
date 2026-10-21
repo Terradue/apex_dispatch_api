@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from eoap_problems_registry.fastapi import (
+from http_apis_problems_detail.fastapi import (
     ForbiddenException,
     ServerErrorException,
     UnauthorizedException,

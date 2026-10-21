@@ -5,7 +5,7 @@ from fastapi import Request, HTTPException, APIRouter, status, Body
 from geojson_pydantic import GeometryCollection, Polygon
 from loguru import logger
 
-from app.middleware.error_handling import PROBLEM_RESPONSES
+from http_apis_problems_detail.fastapi import PROBLEM_RESPONSES
 from app.schemas.tiles import GridTypeEnum, TileRequest
 from app.services.tiles.base import split_polygon_by_grid
 

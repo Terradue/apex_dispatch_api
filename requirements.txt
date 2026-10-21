@@ -31,4 +31,4 @@ types-requests
 types-shapely
 uvicorn[standard]
 ogc-api-client @ git+https://github.com/EOEPCA/ogc-api-client.git@develop#subdirectory=src
-eoap-problems-registry==1.8.0
+http-apis-problems-detail>=2

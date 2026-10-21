@@ -4,7 +4,7 @@ import asyncio
 import json
 from typing import Annotated
 
-from eoap_problems_registry.fastapi import ProblemRegistryException
+from http_apis_problems_detail.fastapi import PROBLEM_RESPONSES, ProblemRegistryException
 from fastapi import (
     Request,
     HTTPException,
@@ -19,7 +19,7 @@ from fastapi import (
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from app.middleware.error_handling import PROBLEM_RESPONSES, add_request_error_details
+from app.middleware.error_handling import add_request_error_details
 from app.auth import oauth2_scheme, websocket_authenticate
 from app.database.db import SessionLocal, get_db
 from app.schemas.enum import OutputFormatEnum, ProcessTypeEnum

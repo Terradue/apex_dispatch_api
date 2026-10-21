@@ -10,7 +10,7 @@ import requests
 
 from app.config.schemas import AuthMethod, BackendAuthConfig
 from app.config.settings import settings
-from eoap_problems_registry.fastapi import UnauthorizedException
+from http_apis_problems_detail.fastapi import UnauthorizedException
 from app.platforms.implementations.openeo import (
     OpenEOPlatform,
 )
@@ -1128,7 +1128,7 @@ async def test_transform_parameters_raises_for_invalid_polygon_coordinates(
 
 @pytest.mark.asyncio
 async def test_get_job_results_forbidden_after_retry(platform, service_details):
-    from eoap_problems_registry.fastapi import ForbiddenException
+    from http_apis_problems_detail.fastapi import ForbiddenException
 
     failure = OpenEoApiError(
         message="Access denied",
